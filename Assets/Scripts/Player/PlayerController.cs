@@ -1,8 +1,9 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Networking;
 
-public class PlayerController : MonoBehaviour {
+public class PlayerController : NetworkBehaviour {
 
     public Camera playerCamera;
 
@@ -21,15 +22,34 @@ public class PlayerController : MonoBehaviour {
     public bool inMenu = false;
 
     public Canvas playerCanvas;
+
+    NetworkIdentity playerIdentity;
     void Start()
     {
-        playerRigidbody = GetComponent<Rigidbody>();
-        playerCanvas.transform.parent = null;
-        playerCanvas.transform.position = Vector3.zero;
+        playerIdentity = GetComponent<NetworkIdentity>();
+        if (playerIdentity.isLocalPlayer)
+        {
+            playerRigidbody = GetComponent<Rigidbody>();
+            playerCanvas.transform.parent = null;
+            playerCanvas.transform.position = Vector3.zero;
+            playerCamera.enabled = true;
+            playerCamera.GetComponent<AudioListener>().enabled = true;
+        } else
+        {
+            Destroy(playerCanvas);
+        }
     }
 
     void Update()
     {
+        if (!playerIdentity.isLocalPlayer)
+        {
+            transform.name = transform.name.Replace("(Clone)", "(NET) " + playerIdentity.netId);
+            return;
+        } else
+        {
+            transform.name = transform.name.Replace("(Clone)", "(LOCAL) " + playerIdentity.netId);
+        }
 
         if (inMenu)
         {
@@ -65,20 +85,20 @@ public class PlayerController : MonoBehaviour {
                 {
                     if (Input.GetMouseButtonDown(0))
                     {
+                       
                         if (pickedObject == null)
                         {
 
-
-                            hit.transform.GetComponent<Rigidbody>().isKinematic = true;
-                            hit.transform.parent = playerCamera.transform;
-                            pickedObject = hit.transform;
-
+                            if (hit.transform.parent == null)
+                            {
+                                PickUpObject(playerCamera.transform, hit.transform, true);
+                                pickedObject = hit.transform;
+                            }
 
                         }
                         else
                         {
-                            pickedObject.GetComponent<Rigidbody>().isKinematic = false;
-                            pickedObject.parent = null;
+                            PickUpObject(transform, hit.transform, false);
                             pickedObject = null;
                         }
                     }
@@ -94,11 +114,22 @@ public class PlayerController : MonoBehaviour {
         {
             playerCanvas.transform.Find("Redicle").gameObject.SetActive(false);
         }
+
+        if (pickedObject != null)
+        {
+            if (Input.GetMouseButton(1))
+            {
+                pickedObject.rotation = Quaternion.Slerp(pickedObject.rotation, Quaternion.identity, Time.deltaTime);
+            }
+        }
     }
 
     void FixedUpdate()
     {
-        
+        if (!playerIdentity.isLocalPlayer)
+        {
+            return;
+        }
         if (Input.GetButton("Vertical"))
         {
             playerRigidbody.AddForce((transform.forward * Input.GetAxis("Vertical")) * playerSpeed);
@@ -107,11 +138,42 @@ public class PlayerController : MonoBehaviour {
         {
             playerRigidbody.AddForce((transform.right * Input.GetAxis("Horizontal")) * playerSpeed);
         }
+        RaycastHit downHit;
+        
+        if (Physics.Raycast(transform.position, Vector3.down, out downHit, GetComponent<MeshFilter>().mesh.bounds.size.y));
+        {
+            if (downHit.transform != null)
+            {
+
+
+                if (downHit.transform.tag != "Player")
+                {
+                    if (Input.GetButton("Jump"))
+                    {
+                        playerRigidbody.AddForce(transform.up * playerSpeed * 1.5f);
+                    }
+                }
+            }
+        }
 
         Vector3 clampVector = playerRigidbody.velocity;
         clampVector.x = Mathf.Clamp(clampVector.x, -5, 5);
         clampVector.z = Mathf.Clamp(clampVector.z, -5, 5);
 
         playerRigidbody.velocity = clampVector;
+    }
+
+    
+    public virtual void PickUpObject(Transform sender,Transform targetObject,bool hold)
+    {
+        if (hold)
+        {
+            targetObject.GetComponent<Rigidbody>().isKinematic = true;
+            targetObject.parent = sender;
+        }else
+        {
+            targetObject.GetComponent<Rigidbody>().isKinematic = false;
+            targetObject.parent = null;
+        }
     }
 }
